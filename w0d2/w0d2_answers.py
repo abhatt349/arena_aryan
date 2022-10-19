@@ -182,11 +182,212 @@ def as_strided_mm(matA: t.Tensor, matB: t.Tensor) -> t.Tensor:
     sA = matA.stride()
     sB = matB.stride()
     i,j,k = matA.shape[0], matA.shape[1], matB.shape[1]
-    cubeA = matA.as_strided(size=(i,j,k), stride=(sA[0], sA[1], 0))
-    cubeB = matB.as_strided(size=(i,j,k), stride=(0, sB[0], sB[1]))
+    cubeA = matA.as_strided(size=(i,j,k), stride=(sA[0], sA[1], 0))  # type: ignore
+    cubeB = matB.as_strided(size=(i,j,k), stride=(0, sB[0], sB[1]))  # type: ignore
 
     return einsum('i j k -> i k', cubeA*cubeB)
 
 utils.test_mm(as_strided_mm)
 utils.test_mm2(as_strided_mm)
+# %%
+
+def conv1d_minimal(x: t.Tensor, weights: t.Tensor) -> t.Tensor:
+    '''Like torch's conv1d using bias=False and all other keyword arguments left at their default values.
+
+    x: shape (batch, in_channels, width)
+    weights: shape (out_channels, in_channels, kernel_width)
+
+    Returns: shape (batch, out_channels, output_width)
+    '''
+
+    batch = x.shape[0]
+    in_channels = x.shape[1]
+    width = x.shape[2]
+    out_channels = weights.shape[0]
+    kernel_width = weights.shape[2]
+    out_width = width - kernel_width + 1
+
+    x_batch_stride, x_in_c_stride, x_width_stride = x.stride()  # type: ignore
+
+    x_strided = x.as_strided(size=(batch, in_channels, out_width, kernel_width), 
+                            stride=(x_batch_stride, x_in_c_stride, x_width_stride, x_width_stride))  # type: ignore
+    return einsum('b in_c out_w kernel_w, out_c in_c kernel_w -> b out_c out_w', x_strided, weights)
+
+utils.test_conv1d_minimal(conv1d_minimal)
+# %%
+
+def conv2d_minimal(x: t.Tensor, weights: t.Tensor) -> t.Tensor:
+    '''Like torch's conv2d using bias=False and all other keyword arguments left at their default values.
+
+    x: shape (batch, in_channels, height, width)
+    weights: shape (out_channels, in_channels, kernel_height, kernel_width)
+
+    Returns: shape (batch, out_channels, output_height, output_width)
+    '''
+    
+    batch = x.shape[0]
+    in_channels = x.shape[1]
+    height = x.shape[2]
+    width = x.shape[3]
+    out_channels = weights.shape[0]
+    kernel_height = weights.shape[2]
+    kernel_width = weights.shape[3]
+
+    out_height = height - kernel_height + 1
+    out_width = width - kernel_width + 1
+
+    xs = x.stride()
+
+    x_strided = x.as_strided(size=(batch, in_channels, out_height, out_width, kernel_height, kernel_width), stride=(xs[0], xs[1], xs[2], xs[3], xs[2], xs[3]))   # type: ignore
+    return einsum('b in_c out_h out_w ker_h ker_w, out_c in_c ker_h ker_w -> b out_c out_h out_w', x_strided, weights)
+    
+
+utils.test_conv2d_minimal(conv2d_minimal)
+# %%
+
+def pad1d(x: t.Tensor, left: int, right: int, pad_value: float) -> t.Tensor:
+    '''Return a new tensor with padding applied to the edges.
+
+    x: shape (batch, in_channels, width), dtype float32
+
+    Return: shape (batch, in_channels, left + right + width)
+    '''
+    padded = x.new_full(size=(x.shape[0], x.shape[1], x.shape[2]+left+right), fill_value=pad_value)
+
+    padded[...,left:left+x.shape[2]] = x 
+
+    return padded
+
+
+utils.test_pad1d(pad1d)
+utils.test_pad1d_multi_channel(pad1d)
+
+# %%
+
+def pad2d(x: t.Tensor, left: int, right: int, top: int, bottom: int, pad_value: float) -> t.Tensor:
+    '''Return a new tensor with padding applied to the edges.
+
+    x: shape (batch, in_channels, height, width), dtype float32
+
+    Return: shape (batch, in_channels, top + height + bottom, left + width + right)
+    '''
+    padded = x.new_full(size=(x.shape[0], x.shape[1], x.shape[2]+top+bottom,  x.shape[3]+left+right), fill_value=pad_value)
+
+    padded[...,top:top+x.shape[2],left:left+x.shape[3]] = x 
+
+    return padded
+
+utils.test_pad2d(pad2d)
+utils.test_pad2d_multi_channel(pad2d)
+# %%
+
+def conv1d(x, weights, stride: int = 1, padding: int = 0) -> t.Tensor:
+    '''Like torch's conv1d using bias=False.
+
+    x: shape (batch, in_channels, width)
+    weights: shape (out_channels, in_channels, kernel_width)
+
+    Returns: shape (batch, out_channels, output_width)
+    '''
+    
+    batch, in_channels, width = x.shape
+    out_channels, in_channels, kernel_width = weights.shape
+
+    out_width = ((width + 2 * padding - kernel_width) // stride) + 1
+    x = pad1d(x, padding, padding, 0)
+
+    bS, icS, wS = x.stride()  # type: ignore
+
+    new_size = (batch, in_channels, out_width, kernel_width)
+    new_stride = (bS, icS, stride * wS, wS)
+
+    x_strided = x.as_strided(size=new_size, stride=new_stride)
+    return einsum('batch in_channels out_width kernel_width, out_channels in_channels kernel_width -> batch out_channels out_width', x_strided, weights) 
+
+utils.test_conv1d(conv1d)
+# %%
+
+IntOrPair = Union[int, tuple[int, int]]
+Pair = tuple[int, int]
+
+def force_pair(v: IntOrPair) -> Pair:
+    '''Convert v to a pair of int, if it isn't already.'''
+    if isinstance(v, tuple):
+        if len(v) != 2:
+            raise ValueError(v)
+        return (int(v[0]), int(v[1]))
+    elif isinstance(v, int):
+        return (v, v)
+    raise ValueError(v)
+
+# Examples of how this function can be used:
+#       force_pair((1, 2))     ->  (1, 2)
+#       force_pair(2)          ->  (2, 2)
+#       force_pair((1, 2, 3))  ->  ValueError
+# %%
+
+def conv2d(x, weights, stride: IntOrPair = 1, padding: IntOrPair = 0) -> t.Tensor:
+    '''Like torch's conv2d using bias=False
+
+    x: shape (batch, in_channels, height, width)
+    weights: shape (out_channels, in_channels, kernel_height, kernel_width)
+
+
+    Returns: shape (batch, out_channels, output_height, output_width)
+    '''
+    batch, in_channels, height, width = x.shape
+    out_channels, in_channels, kernel_height, kernel_width = weights.shape
+
+    padding = force_pair(padding)
+    stride = force_pair(stride)
+
+    out_height = ((height + 2 * padding[0] - kernel_height) // stride[0]) + 1
+    out_width = ((width + 2 * padding[1] - kernel_width) // stride[1]) + 1
+
+    x = pad2d(x, left=padding[1], right=padding[1], top=padding[0], bottom=padding[0], pad_value=0)
+
+    bS, icS, hS, wS = x.stride()  # type: ignore
+
+    new_size = (batch, in_channels, out_height, kernel_height, out_width, kernel_width)
+    new_stride = (bS, icS, stride[0] * hS, hS, stride[1] * wS, wS)
+
+    x_strided = x.as_strided(size=new_size, stride=new_stride)
+    return einsum('batch in_channels out_height kernel_height out_width kernel_width, out_channels in_channels kernel_height kernel_width -> batch out_channels out_height out_width', x_strided, weights) 
+
+utils.test_conv2d(conv2d)
+# %%
+
+def maxpool2d(x: t.Tensor, kernel_size: IntOrPair, stride: Optional[IntOrPair] = None, padding: IntOrPair = 0) -> t.Tensor:
+    '''Like PyTorch's maxpool2d.
+
+    x: shape (batch, channels, height, width)
+    stride: if None, should be equal to the kernel size
+
+    Return: (batch, channels, out_height, output_width)
+    '''
+    kernel_size = force_pair(kernel_size)
+    if stride is None:
+        stride = kernel_size
+    else:
+        stride = force_pair(stride)
+    padding = force_pair(padding)
+
+    (batch, channels, height, width) = x.shape
+
+    out_height = ((height + 2 * padding[0] - kernel_size[0]) // stride[0]) + 1
+    out_width = ((width + 2 * padding[1] - kernel_size[1]) // stride[1]) + 1
+
+    x = pad2d(x, left=padding[1], right=padding[1], top=padding[0], bottom=padding[0], pad_value=-float('inf'))
+
+    bS, cS, hS, wS = x.stride()  # type: ignore
+
+    new_size = (batch, channels, out_height, kernel_size[0], out_width, kernel_size[1])
+    new_stride = (bS, cS, stride[0] * hS, hS, stride[1] * wS, wS)
+
+    x_strided = x.as_strided(size=new_size, stride=new_stride)
+
+    return reduce(x_strided, 'batch channels out_height kernel_height out_width kernel_width -> batch channels out_height out_width', 'max')
+
+
+utils.test_maxpool2d(maxpool2d)
 # %%
