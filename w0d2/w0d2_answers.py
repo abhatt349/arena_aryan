@@ -1,12 +1,16 @@
 #%%
+from xml.dom.pulldom import START_DOCUMENT
 import numpy as np
 from fancy_einsum import einsum
 from einops import reduce, rearrange, repeat
 from typing import Union, Optional, Callable
 import torch as t
+from torch import nn
 import torchvision
 import utils
 from utils import display_array_as_img
+import functools
+import math
 
 arr = np.load("numbers.npy")
 
@@ -390,4 +394,142 @@ def maxpool2d(x: t.Tensor, kernel_size: IntOrPair, stride: Optional[IntOrPair] =
 
 
 utils.test_maxpool2d(maxpool2d)
+# %%
+
+class MaxPool2d(nn.Module):
+    def __init__(self, kernel_size: IntOrPair, stride: Optional[IntOrPair] = None, padding: IntOrPair = 1):
+
+        super().__init__()
+
+        self.kernel_size = force_pair(kernel_size)
+        if stride is None:
+            self.stride = self.kernel_size
+        else:
+            self.stride = force_pair(stride)
+        self.padding = force_pair(padding)
+
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        '''Call the functional version of maxpool2d.'''
+        return maxpool2d(x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
+
+    def extra_repr(self) -> str:
+        '''Add additional information to the string representation of this class.'''
+        return f"MaxPool layer with kernel_size={self.kernel_size}, stride={self.stride}, padding={self.padding}"
+
+utils.test_maxpool2d_module(MaxPool2d)
+m = MaxPool2d(kernel_size=3, stride=2, padding=1)
+print(f"Manually verify that this is an informative repr: {m}")
+# %%
+
+class ReLU(nn.Module):
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return t.maximum(x, t.zeros(x.shape))
+
+utils.test_relu(ReLU)
+
+# %%
+class Flatten(nn.Module):
+    def __init__(self, start_dim: int = 1, end_dim: int = -1) -> None:
+        super().__init__()
+        self.start_dim=start_dim
+        self.end_dim=end_dim
+
+    def forward(self, input: t.Tensor) -> t.Tensor:
+        '''Flatten out dimensions from start_dim to end_dim, inclusive of both.
+        '''
+
+        start_dim = self.start_dim % len(input.shape)
+        end_dim = self.end_dim % len(input.shape) + 1
+
+        new_shape = list(input.shape)
+        new_dim = functools.reduce(lambda x,y:x*y, new_shape[start_dim:end_dim], 1)
+        new_shape = new_shape[:self.start_dim] + [new_dim] + new_shape[end_dim:]
+        
+        return t.reshape(input, shape=tuple(new_shape))
+
+
+    def extra_repr(self) -> str:
+        return f"Flatten layer with start_dim={self.start_dim}, end_dim={self.end_dim}"
+
+utils.test_flatten(Flatten)
+# %%
+
+class Linear(nn.Module):
+    def __init__(self, in_features: int, out_features: int, bias=True):
+        '''A simple linear (technically, affine) transformation.
+
+        The fields should be named `weight` and `bias` for compatibility with PyTorch.
+        If `bias` is False, set `self.bias` to None.
+        '''
+        super().__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+
+        norm = math.sqrt(1/in_features)
+
+        weights = t.rand(size=(out_features, in_features), dtype=t.float)
+        weights = (2 * weights - 1) * norm
+
+        self.weight = nn.Parameter(weights)
+
+        if bias:
+            self.bias = nn.Parameter((2*t.rand(size=(out_features,), dtype=t.float)-1)*norm)
+        else:
+            self.bias = None
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        '''
+        x: shape (*, in_features)
+        Return: shape (*, out_features)
+        '''
+        output = einsum('out_features in_features, ... in_features -> ... out_features', self.weight, x)
+
+        if self.bias is not None:
+            output += self.bias
+
+        return output
+
+
+    def extra_repr(self) -> str:
+        return f"Linear layer with in_features={self.weight.shape[1]}, out_features={self.weight.shape[0]}, bias={self.bias is not None}"
+
+utils.test_linear_forward(Linear)
+utils.test_linear_parameters(Linear)
+utils.test_linear_no_bias(Linear)
+# %%
+
+class Conv2d(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: IntOrPair, stride: IntOrPair = 1, padding: IntOrPair = 0):
+        '''
+        Same as torch.nn.Conv2d with bias=False.
+
+        Name your weight field `self.weight` for compatibility with the PyTorch version.
+        '''
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = force_pair(kernel_size)
+        self.stride = force_pair(stride)
+        self.padding = force_pair(padding)
+
+        norm = math.sqrt(1/(in_channels*self.kernel_size[0]*self.kernel_size[1]))
+
+        weight = t.rand(size=(out_channels, in_channels, self.kernel_size[0], self.kernel_size[1]), dtype=t.float)
+        weight = (2 * weight - 1) * norm
+
+        self.weight = nn.Parameter(weight)
+
+
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        '''Apply the functional conv2d you wrote earlier.'''
+        return conv2d(x, self.weight, self.stride, self.padding)
+
+    def extra_repr(self) -> str:
+        return f"Conv2d layer with in_channels={self.in_channels}, out_channels={self.out_channels}, kernel_size={self.weight.shape}, stride={self.stride}, padding={self.padding}"
+
+utils.test_conv2d_module(Conv2d)
 # %%
