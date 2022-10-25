@@ -472,10 +472,10 @@ class Linear(nn.Module):
         weights = t.rand(size=(out_features, in_features), dtype=t.float)
         weights = (2 * weights - 1) * norm
 
-        self.weight = nn.Parameter(weights)
+        self.weight = nn.Parameter(weights) # type: ignore
 
         if bias:
-            self.bias = nn.Parameter((2*t.rand(size=(out_features,), dtype=t.float)-1)*norm)
+            self.bias = nn.Parameter((2*t.rand(size=(out_features,), dtype=t.float)-1)*norm) # type: ignore
         else:
             self.bias = None
 
@@ -520,7 +520,7 @@ class Conv2d(nn.Module):
         weight = t.rand(size=(out_channels, in_channels, self.kernel_size[0], self.kernel_size[1]), dtype=t.float)
         weight = (2 * weight - 1) * norm
 
-        self.weight = nn.Parameter(weight)
+        self.weight = nn.Parameter(weight) # type: ignore
 
 
 
@@ -532,4 +532,5 @@ class Conv2d(nn.Module):
         return f"Conv2d layer with in_channels={self.in_channels}, out_channels={self.out_channels}, kernel_size={self.weight.shape}, stride={self.stride}, padding={self.padding}"
 
 utils.test_conv2d_module(Conv2d)
+
 # %%
