@@ -81,3 +81,4 @@ def compare_my_resnet_to_pytorch(myresnet):
     )
     with pd.option_context("display.max_rows", None):  # type: ignore
         display(df)
+

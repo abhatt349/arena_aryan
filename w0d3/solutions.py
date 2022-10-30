@@ -4,6 +4,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 from tqdm.notebook import tqdm_notebook
 import PIL
+from torch import nn
 
 class ConvNet(nn.Module):
     def __init__(self):
@@ -39,7 +40,7 @@ class Sequential(nn.Module):
     def forward(self, x: t.Tensor) -> t.Tensor:
         """Chain each module together, with the output from one feeding into the next one."""
         for mod in self._modules.values():
-            x = mod(x)
+            if mod is not None: x = mod(x)
         return x
 
 class BatchNorm2d(nn.Module):
@@ -57,8 +58,8 @@ class BatchNorm2d(nn.Module):
         self.eps = eps
         self.momentum = momentum
         
-        self.weight = nn.Parameter(t.ones(num_features))
-        self.bias = nn.Parameter(t.zeros(num_features))
+        self.weight = nn.Parameter(t.ones(num_features))  # type: ignore
+        self.bias = nn.Parameter(t.zeros(num_features))  # type: ignore
         
         self.register_buffer("running_mean", t.zeros(num_features))
         self.register_buffer("running_var", t.ones(num_features))
@@ -130,7 +131,7 @@ class ResidualBlock(nn.Module):
                 BatchNorm2d(out_feats)
             )
         else:
-            self.right = nn.Identity()
+            self.right = nn.Identity()  # type: ignore
             
         self.relu = ReLU()
 
@@ -156,7 +157,7 @@ class BlockGroup(nn.Module):
         blocks = [ResidualBlock(in_feats, out_feats, first_stride)] + [
             ResidualBlock(out_feats, out_feats) for n in range(n_blocks - 1)
         ]
-        self.blocks = nn.Sequential(*blocks)
+        self.blocks = nn.Sequential(*blocks)  # type: ignore
         
     def forward(self, x: t.Tensor) -> t.Tensor:
         """Compute the forward pass.
@@ -229,7 +230,7 @@ transform = transforms.Compose([
 ])
 
 
-def prepare_data(images: list[PIL.Image.Image]) -> t.Tensor:
+def prepare_data(images: list[PIL.Image.Image]) -> t.Tensor:  # type: ignore
     """
     Return: shape (batch=len(images), num_channels=3, height=224, width=224)
     """
@@ -253,7 +254,7 @@ trainloader = DataLoader(trainset, batch_size=64, shuffle=True)
 testset = datasets.MNIST(root="./data", train=False, transform=transform, download=True)
 testloader = DataLoader(testset, batch_size=64, shuffle=True)
 
-def train_convnet(trainloader: DataLoader, testloader: DataLoader, epochs: int, loss_fn: Callable) -> list:
+def train_convnet(trainloader: DataLoader, testloader: DataLoader, epochs: int, loss_fn: Callable) -> tuple:
     """
     Defines a ConvNet using our previous code, and trains it on the data in trainloader.
     
@@ -297,7 +298,7 @@ def train_convnet(trainloader: DataLoader, testloader: DataLoader, epochs: int, 
 
             accuracy_list.append(accuracy/total)
             
-        print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")
+        print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")  # type: ignore
     
     print(f"Saving model to: {MODEL_FILENAME}")
     t.save(model, MODEL_FILENAME)
