@@ -267,7 +267,6 @@ loss_fn = t.nn.CrossEntropyLoss()
 
 MODEL_FILENAME = "./w1d3_reversing_transformer.pt"
 
-
 def train_transformer(trainloader: DataLoader, testloader: DataLoader, epochs: int, loss_fn: Callable, config: TransformerConfig) -> list:
     '''
     Returns tuple of (loss_list, accuracy_list), where accuracy_list contains the fraction of accurate classifications on the test set, at the end of each epoch.
