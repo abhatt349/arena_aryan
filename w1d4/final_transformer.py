@@ -62,7 +62,7 @@ def multihead_masked_attention(Q: t.Tensor, K: t.Tensor, V: t.Tensor, num_heads:
 
     attention_scores = einsum('b seq_q nheads h_size, b seq_k nheads h_size -> b nheads seq_q seq_k', Q, K)
 
-    mask = t.zeros(size=(seq_len, seq_len))
+    mask = t.zeros(size=(seq_len, seq_len), dtype=dtype, device=device)
     for i in range(seq_len):
         mask[..., i, i+1:] = -t.inf
 
@@ -129,8 +129,8 @@ class PositionalEncoding(nn.Module):
 
         super().__init__()
 
-        graph1 = t.arange(max_seq_len)
-        graph2 = 1 / 1e4 ** (t.arange(0,embedding_dim,step=2) / embedding_dim)
+        graph1 = t.arange(max_seq_len, dtype=dtype, device=device)
+        graph2 = 1 / 1e4 ** (t.arange(0,embedding_dim,step=2, dtype=dtype, device=device) / embedding_dim)
 
         graph = t.outer(graph1, graph2)
         graph = rearrange(t.cat([t.sin(graph), t.cos(graph)], dim=1), 'L (d1 d2) -> L (d2 d1)', d1=2)
@@ -208,6 +208,9 @@ class DecoderOnlyTransformer(nn.Module):
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         
+        if len(x.shape)==1:
+            x=x.unsqueeze(dim=0)
+            
         embedding = self.token_emb(x.to(dtype=t.long))
         embedding = self.pos_emb(embedding)
         embedding = self.dropout(embedding)
