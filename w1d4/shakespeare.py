@@ -378,7 +378,7 @@ class WordsTokenizer():
         elif return_tensors == "pt":
             return t.tensor(tensors_list)
         elif return_tensors == "np":
-            return np.array(tensors_list)
+            return np.array(tensors_list) # type: ignore
         else:
             raise Exception("Unexpected value for `return_tensors`.")
 
