@@ -235,46 +235,14 @@ def copy_weights_from_gpt(my_gpt: GPT, gpt) -> GPT:
     return my_gpt
 
 
-def soln_copy_weights_from_gpt(my_gpt: GPT, gpt) -> GPT:
-    '''Copy over the weights of `gpt` to your gpt implementation.'''
-
-    # Here we use named params not state dict, because gpt doesn't have any buffers we care about
-    # (I think all its buffers are attention masks)
-    my_gpt_dict = dict(my_gpt.named_parameters())
-    gpt_dict = dict(gpt.named_parameters())
-    
-    # Check the number of params/buffers is correct
-    assert len(my_gpt_dict) == len(gpt_dict), "Number of layers is wrong. Have you done the prev step correctly?"
-    
-    # Initialise an empty dictionary to store the correct key-value pairs
-    state_dict = {}
-    
-    for (my_param_name, my_param), (name, param) in zip(my_gpt_dict.items(), gpt_dict.items()):
-        # Sometimes params are transposed
-        if len(my_param.shape) == 2 and my_param.shape == param.T.shape:
-            state_dict[my_param_name] = param.T
-            # print(f"Copied params.T: {name} -> {my_param_name}")
-        elif my_param.shape == param.shape:
-            state_dict[my_param_name] = param
-            # print(f"Copied params:   {name} -> {my_param_name}")
-        else:
-            raise Exception(f"Parameter shapes don't match: {my_param.shape} vs {param.shape}")
-
-    if set(state_dict.keys()) != set(my_gpt.state_dict().keys()):
-        raise Exception("State dicts don't match.")
-    
-    my_gpt.load_state_dict(state_dict)
-    
-    return my_gpt
-
 # %%
 
 if MAIN:
     
-    my_gpt = soln_copy_weights_from_gpt(my_gpt, gpt)
+    my_gpt = copy_weights_from_gpt(my_gpt, gpt)
 
     tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")
-    
+
     utils.test_load_pretrained_weights(gpt, tokenizer)
     utils.test_load_pretrained_weights(my_gpt, tokenizer)
 
