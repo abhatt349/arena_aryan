@@ -1,19 +1,16 @@
 # %%
-import torch as t
-from torch import nn
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-from fancy_einsum import einsum
-from typing import Union, Optional, Callable
-import numpy as np
-from einops import rearrange
-from tqdm.notebook import tqdm_notebook
-import plotly.express as px
-import plotly.graph_objs as go
-from plotly.subplots import make_subplots
 import time
-import wandb
+
+import torch as t
 import utils
+import wandb
+from einops import rearrange
+from fancy_einsum import einsum
+from plotly.subplots import make_subplots
+from torch import nn, optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from tqdm.notebook import tqdm_notebook
 from w0d3_solutions import ResNet34
 
 MAIN = (__name__ == '__main__')
@@ -37,80 +34,159 @@ if MAIN:
 
 # %%
 
-def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr: float) -> tuple[list, list]:
+## Base Training Loop
 
-    model = ResNet34().to(device).train()
-    optimizer = t.optim.Adam(model.parameters(), lr=lr)
+# def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr: float) -> tuple[list, list]:
 
-    loss_list = []
-    accuracy_list = []
+#     model = ResNet34().to(device).train()
+#     optimizer = t.optim.Adam(model.parameters(), lr=lr)
 
-    trainloader = DataLoader(trainset, shuffle=True, batch_size=batch_size)
-    testloader = DataLoader(testset, shuffle=True, batch_size=batch_size)
+#     loss_list = []
+#     accuracy_list = []
 
-    for epoch in range(epochs):
+#     trainloader = DataLoader(trainset, shuffle=True, batch_size=batch_size)
+#     testloader = DataLoader(testset, shuffle=True, batch_size=batch_size)
 
-        progress_bar = tqdm_notebook(trainloader)
+#     for epoch in range(epochs):
 
-        for (x, y) in progress_bar:
+#         progress_bar = tqdm_notebook(trainloader)
 
-            x = x.to(device)
-            y = y.to(device)
+#         for (x, y) in progress_bar:
 
-            optimizer.zero_grad()
-            y_hat = model(x)
-            loss = loss_fn(y_hat, y)
-            loss.backward()
-            optimizer.step()
+#             x = x.to(device)
+#             y = y.to(device)
 
-            loss_list.append(loss.item())
+#             optimizer.zero_grad()
+#             y_hat = model(x)
+#             loss = loss_fn(y_hat, y)
+#             loss.backward()
+#             optimizer.step()
 
-            progress_bar.set_description(f"Epoch = {epoch}, Loss = {loss.item():.4f}")
+#             loss_list.append(loss.item())
 
-        with t.inference_mode():
+#             progress_bar.set_description(f"Epoch = {epoch}, Loss = {loss.item():.4f}")
 
-            accuracy = 0
-            total = 0
+#         with t.inference_mode():
 
-            for (x, y) in testloader:
+#             accuracy = 0
+#             total = 0
 
-                x = x.to(device)
-                y = y.to(device)
+#             for (x, y) in testloader:
 
-                y_hat = model(x)
-                y_predictions = y_hat.argmax(1)
-                accuracy += (y_predictions == y).sum().item()
-                total += y.size(0)
+#                 x = x.to(device)
+#                 y = y.to(device)
 
-            accuracy_list.append(accuracy/total)
+#                 y_hat = model(x)
+#                 y_predictions = y_hat.argmax(1)
+#                 accuracy += (y_predictions == y).sum().item()
+#                 total += y.size(0)
 
-        print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")
+#             accuracy_list.append(accuracy/total)
 
-    filename = "./w0d3_resnet.pt"
-    print(f"Saving model to: {filename}")
-    t.save(model.state_dict(), filename)
+#         print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")
 
-    utils.plot_results(loss_list, accuracy_list)
-    return loss_list, accuracy_list
+#     filename = "./w0d3_resnet.pt"
+#     print(f"Saving model to: {filename}")
+#     t.save(model.state_dict(), filename)
 
-if MAIN:
-    epochs = 1
-    loss_fn = nn.CrossEntropyLoss()
-    batch_size = 128
-    lr = 0.001
+#     utils.plot_results(loss_list, accuracy_list)
+#     return loss_list, accuracy_list
 
-    loss_list, accuracy_list = train(trainset, testset, epochs, loss_fn, batch_size, lr)
+# if MAIN:
+#     epochs = 1
+#     loss_fn = nn.CrossEntropyLoss()
+#     batch_size = 128
+#     lr = 0.001
+
+#     loss_list, accuracy_list = train(trainset, testset, epochs, loss_fn, batch_size, lr)
 
 # %%
 
-def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr: float) -> None:
+## Training loop with basic wandb variable logging
 
-    config_dict = {
-        "batch_size": batch_size,
-        "epochs": epochs,
-        "lr": lr,
-    }
-    wandb.init(project="w2d1_resnet", config=config_dict)
+# def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr: float) -> None:
+
+#     config_dict = {
+#         "batch_size": batch_size,
+#         "epochs": epochs,
+#         "lr": lr,
+#     }
+#     wandb.init(project="w2d1_resnet", config=config_dict)
+
+#     model = ResNet34().to(device).train()
+#     optimizer = t.optim.Adam(model.parameters(), lr=lr)
+
+#     examples_seen = 0
+#     start_time = time.time()
+
+#     trainloader = DataLoader(trainset, shuffle=True, batch_size=batch_size)
+#     testloader = DataLoader(testset, shuffle=True, batch_size=batch_size)
+
+#     wandb.watch(model, criterion=loss_fn, log="all", log_freq=10, log_graph=True)
+
+#     for epoch in range(epochs):
+
+#         progress_bar = tqdm_notebook(trainloader)
+
+#         for (x, y) in progress_bar:
+
+#             x = x.to(device)
+#             y = y.to(device)
+
+#             optimizer.zero_grad()
+#             y_hat = model(x)
+#             loss = loss_fn(y_hat, y)
+#             loss.backward()
+#             optimizer.step()
+
+#             progress_bar.set_description(f"Epoch = {epoch}, Loss = {loss.item():.4f}")
+
+#             examples_seen += len(x)
+#             wandb.log({"train_loss": loss, "elapsed": time.time() - start_time}, step=examples_seen)
+
+#         with t.inference_mode():
+
+#             accuracy = 0
+#             total = 0
+
+#             for (x, y) in testloader:
+
+#                 x = x.to(device)
+#                 y = y.to(device)
+
+#                 y_hat = model(x)
+#                 y_predictions = y_hat.argmax(1)
+#                 accuracy += (y_predictions == y).sum().item()
+#                 total += y.size(0)
+
+#             wandb.log({"test_accuracy": accuracy/total}, step=examples_seen)
+
+#     filename = f"{wandb.run.dir}/model_state_dict.pt"
+#     print(f"Saving model to: {filename}")
+#     t.save(model.state_dict(), filename)
+#     wandb.save(filename)
+#     wandb.finish()
+
+# if MAIN:
+#     epochs = 1
+#     loss_fn = nn.CrossEntropyLoss()
+#     batch_size = 128
+#     lr = 0.001
+#      
+#     train(trainset, testset, epochs, loss_fn, batch_size, lr)
+
+
+# %%
+
+## Training loop with wandb sweep
+
+def train() -> None:
+
+    wandb.init()
+
+    epochs = wandb.config.epochs
+    batch_size = wandb.config.batch_size
+    lr = wandb.config.lr
 
     model = ResNet34().to(device).train()
     optimizer = t.optim.Adam(model.parameters(), lr=lr)
@@ -143,6 +219,7 @@ def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr
             examples_seen += len(x)
             wandb.log({"train_loss": loss, "elapsed": time.time() - start_time}, step=examples_seen)
 
+
         with t.inference_mode():
 
             accuracy = 0
@@ -160,10 +237,29 @@ def train(trainset, testset, epochs: int, loss_fn: Callable, batch_size: int, lr
 
             wandb.log({"test_accuracy": accuracy/total}, step=examples_seen)
 
-    filename = f"{wandb.run.dir}/model_state_dict.pt"
+        print(f"Epoch {epoch+1}/{epochs}, train loss is {loss:.6f}, accuracy is {accuracy}/{total}")  # type: ignore
+
+    filename = f"{wandb.run.dir}/model_state_dict.pt"  # type: ignore
     print(f"Saving model to: {filename}")
     t.save(model.state_dict(), filename)
     wandb.save(filename)
 
 if MAIN:
-    train(trainset, testset, epochs, loss_fn, batch_size, lr)
+    sweep_config = {
+        'method': 'random',
+        'name': 'w2d1_resnet_sweep_2',
+        'metric': {'name': 'test_accuracy', 'goal': 'maximize'},
+        'parameters': 
+        {
+            'batch_size': {'values': [64, 128, 256]},
+            'epochs': {'min': 1, 'max': 3},
+            'lr': {'max': 0.1, 'min': 0.0001, 'distribution': 'log_uniform_values'}
+        }
+    }
+
+    loss_fn = nn.CrossEntropyLoss()
+
+    sweep_id = wandb.sweep(sweep=sweep_config, project='w2d1_resnet')
+
+    wandb.agent(sweep_id=sweep_id, function=train, count=2)
+    wandb.finish()
