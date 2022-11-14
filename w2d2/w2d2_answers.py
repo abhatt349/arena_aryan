@@ -1,6 +1,10 @@
 # %%
+import math
 import time
+from collections import OrderedDict
+from typing import List, Optional, Union
 
+import plotly.express as px
 import torch as t
 import transformers
 import utils
@@ -9,13 +13,11 @@ from einops import rearrange
 from fancy_einsum import einsum
 from functions_from_previous_days import *
 from plotly.subplots import make_subplots
-from torch import nn
-from torch.nn import Module
+from torch import nn, optim
+from torch.nn import Module, Parameter  # type: ignore
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from tqdm.notebook import tqdm_notebook
-from collections import OrderedDict
-import transformers
 
 MAIN = (__name__ == '__main__')
 dtype = t.float
@@ -117,10 +119,10 @@ class MLP(Module):
         super().__init__()
         self.config = config
 
-        self.fc1 = nn.Linear(config.hidden_size, 4*config.hidden_size, dtype=dtype, device=device)
-        self.gelu = nn.GELU()
-        self.fc2 = nn.Linear(4*config.hidden_size, config.hidden_size, dtype=dtype, device=device)
-        self.dropout = nn.Dropout(p=config.dropout)
+        self.fc1 = nn.Linear(config.hidden_size, 4*config.hidden_size, dtype=dtype, device=device)  # type: ignore
+        self.gelu = nn.GELU()  # type: ignore
+        self.fc2 = nn.Linear(4*config.hidden_size, config.hidden_size, dtype=dtype, device=device)  # type: ignore
+        self.dropout = nn.Dropout(p=config.dropout)  # type: ignore
 
     def forward(self, x: t.Tensor) -> t.Tensor:
         
@@ -157,14 +159,14 @@ class GPT(Module):
 
         super().__init__()
 
-        self.token_emb = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size)
-        self.pos_emb = nn.Embedding(num_embeddings=config.max_seq_len, embedding_dim=config.hidden_size)
-        self.dropout = nn.Dropout(p=config.dropout)
+        self.token_emb = nn.Embedding(num_embeddings=config.vocab_size, embedding_dim=config.hidden_size)  # type: ignore
+        self.pos_emb = nn.Embedding(num_embeddings=config.max_seq_len, embedding_dim=config.hidden_size)  # type: ignore
+        self.dropout = nn.Dropout(p=config.dropout)  # type: ignore
         # self.blocks = nn.Sequential({'block '+str(i):DecoderBlock(config) for i in range(config.num_layers)}) # type: ignore
         self.blocks = nn.Sequential(OrderedDict(
             [(f'block {i}',GPTDecoderBlock(config)) for i in range(config.num_layers)]
             )) # type: ignore
-        self.layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)
+        self.layer_norm = nn.LayerNorm(normalized_shape=config.hidden_size)  # type: ignore
 
 
     def forward(self, x: t.Tensor) -> t.Tensor:
@@ -196,9 +198,9 @@ if MAIN:
 
 
     my_gpt = GPT(config).train()
-    gpt = transformers.AutoModelForCausalLM.from_pretrained("gpt2").train()
+    gpt = transformers.AutoModelForCausalLM.from_pretrained("gpt2").train()  # type: ignore
 
-    utils.print_param_count(my_gpt, gpt)
+    # utils.print_param_count(my_gpt, gpt)
 
 # %%
 
@@ -239,12 +241,101 @@ def copy_weights_from_gpt(my_gpt: GPT, gpt) -> GPT:
 
 if MAIN:
     
-    my_gpt = copy_weights_from_gpt(my_gpt, gpt)
+    my_gpt = copy_weights_from_gpt(my_gpt, gpt)  # type: ignore
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")
+    tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2")  # type: ignore
 
-    utils.test_load_pretrained_weights(gpt, tokenizer)
+    utils.test_load_pretrained_weights(gpt, tokenizer)  # type: ignore
     utils.test_load_pretrained_weights(my_gpt, tokenizer)
 
 
-    # %%
+# %%
+
+class Embedding(nn.Module):
+    def __init__(self, num_embeddings: int, embedding_dim: int):
+
+        super().__init__()
+        self.weight = Parameter(t.randn(size=(num_embeddings, embedding_dim), dtype=dtype, device=device)) 
+
+    def forward(self, x: t.LongTensor) -> t.Tensor:
+        '''For each integer in the input, return that row of the embedding.
+        '''
+
+        return self.weight[x]
+            
+            
+    def extra_repr(self) -> str:
+        return f"num_embeddings: {self.num_embeddings}, embedding_dim: {self.embedding_dim}"
+
+if MAIN:
+    utils.test_embedding(Embedding)
+# %%
+
+class GELU(nn.Module):
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        return x * (1+t.erf(x/math.sqrt(2))) / 2
+
+if MAIN:
+    utils.plot_gelu(GELU)
+
+# %%
+
+class LayerNorm(nn.Module):
+
+    def __init__(self, normalized_shape: Union[int, List[int]], eps: float = 1e-05, elementwise_affine: bool = True):
+        
+        super().__init__()
+
+        if isinstance(normalized_shape, int):
+            normalized_shape = [normalized_shape]
+        
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+
+        if self.elementwise_affine:
+            self.weight = Parameter(t.ones(normalized_shape, dtype=dtype, device=device))
+            self.bias = Parameter(t.zeros(normalized_shape, dtype=dtype, device=device)) 
+
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        
+        dims = tuple(-t.arange(1,len(self.normalized_shape)+1))
+
+        mean = x.mean(dim=dims, keepdims=True)   # type: ignore
+        var = x.var(dim=dims, unbiased=False, keepdims=True)   # type: ignore
+
+        x = (x - mean) / t.sqrt(var + self.eps)
+
+        if self.elementwise_affine:
+            x = x * self.weight + self.bias
+        
+        return x
+
+utils.test_layernorm_mean_1d(LayerNorm)
+utils.test_layernorm_mean_2d(LayerNorm)
+utils.test_layernorm_std(LayerNorm)
+utils.test_layernorm_exact(LayerNorm)
+utils.test_layernorm_backward(LayerNorm)
+
+# %%
+
+class Dropout(nn.Module):
+
+    def __init__(self, p: float):
+        
+        super().__init__()
+        
+        self.p = p
+
+    def forward(self, x: t.Tensor) -> t.Tensor:
+        
+        if self.training:
+            x = x*t.bernoulli(t.ones_like(x)*(1-self.p)) / (1-self.p)
+        return x
+
+utils.test_dropout_eval(Dropout)
+utils.test_dropout_training(Dropout)
+
+# %%
