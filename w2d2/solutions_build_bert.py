@@ -16,8 +16,9 @@ from typing import Optional
 from functions_from_previous_days import *
 import utils
 
+MAIN = (__name__ == '__main__')
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
-assert str(device) == "cuda"
+# assert str(device) == "cuda"
 
 # %%
 # ============================= CONFIG =============================
@@ -234,12 +235,13 @@ class BertLanguageModel(nn.Module):
 # %%
 # ============================= INITIALISING MODELS =============================
 
-tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
+if MAIN:
+    tokenizer = transformers.AutoTokenizer.from_pretrained("bert-base-cased")
 
-my_bert = BertLanguageModel(config).train()
-bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
+    my_bert = BertLanguageModel(config).train()
+    bert = transformers.BertForMaskedLM.from_pretrained("bert-base-cased")
 
-utils.print_param_count(my_bert, bert)
+    utils.print_param_count(my_bert, bert)
 
 # %%
 # ============================= LOADING WEIGHTS =============================
@@ -278,7 +280,9 @@ def copy_weights_from_bert(my_bert: BertLanguageModel, bert: transformers.models
     
     return my_bert
 
-my_bert = copy_weights_from_bert(my_bert, bert)
+if MAIN:
+    my_bert = copy_weights_from_bert(my_bert, bert)
+
 
 
 # %%
@@ -318,10 +322,12 @@ def test_bert_prediction(predict, model, tokenizer):
     assert "Washington" in predictions[0]
     assert "Bush" in predictions[0]
 
-test_bert_prediction(predict, my_bert, tokenizer)
+if MAIN:
+    
+    test_bert_prediction(predict, my_bert, tokenizer)
 
-your_text = "The Answer to the Ultimate Question of Life, The Universe, and Everything is [MASK]."
-predictions = predict(my_bert, tokenizer, your_text)
-print("Model predicted: \n", "\n".join(map(str, predictions)))
+    your_text = "The Answer to the Ultimate Question of Life, The Universe, and Everything is [MASK]."
+    predictions = predict(my_bert, tokenizer, your_text)
+    print("Model predicted: \n", "\n".join(map(str, predictions)))
 
 # %%
